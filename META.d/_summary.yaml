@@ -1,0 +1,10 @@
+---
+schema: 1.1
+
+partition: tf-ecosystem
+
+summary:
+  owner: bunkerity
+  description: |
+    Terraform provider for managing BunkerWeb services via the BunkerWeb API.
+  visibility: public
