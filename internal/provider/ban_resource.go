@@ -178,7 +178,6 @@ func (r *BunkerWebBanResource) Read(ctx context.Context, req resource.ReadReques
 
 func (r *BunkerWebBanResource) Update(ctx context.Context, _ resource.UpdateRequest, resp *resource.UpdateResponse) {
 	resp.Diagnostics.AddError("Update Not Supported", "BunkerWeb bans cannot be updated in-place; recreate the resource with new arguments.")
-	return
 }
 
 func (r *BunkerWebBanResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {

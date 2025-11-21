@@ -366,7 +366,6 @@ func (f *fakeBunkerWebAPI) handleUpdateService(w http.ResponseWriter, r *http.Re
 			delete(f.services, id)
 			svc.ID = newID
 			f.services[newID] = svc
-			id = newID
 		}
 	}
 

@@ -111,7 +111,7 @@ func (r *BunkerWebConfigUploadEphemeralResource) Open(ctx context.Context, req e
 		return
 	}
 
-	uploadReq, diags := data.toUploadRequest(ctx)
+	uploadReq, diags := data.toUploadRequest()
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -137,7 +137,7 @@ func (r *BunkerWebConfigUploadEphemeralResource) Close(context.Context, ephemera
 	// No follow-up required.
 }
 
-func (m *BunkerWebConfigUploadEphemeralResourceModel) toUploadRequest(ctx context.Context) (ConfigUploadRequest, diag.Diagnostics) {
+func (m *BunkerWebConfigUploadEphemeralResourceModel) toUploadRequest() (ConfigUploadRequest, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
 	if m.Type.IsNull() || m.Type.IsUnknown() {

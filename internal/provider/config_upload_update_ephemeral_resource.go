@@ -163,7 +163,7 @@ func (m *BunkerWebConfigUploadUpdateModel) toUploadUpdateRequest() (ConfigKey, C
 
 	service := normalizeTFService(m.Service)
 	key := ConfigKey{
-		Service: stringPointer(service, true),
+		Service: stringPointer(service),
 		Type:    strings.TrimSpace(m.Type.ValueString()),
 		Name:    strings.TrimSpace(m.Name.ValueString()),
 	}

@@ -109,6 +109,8 @@ func stringifyValue(value any) string {
 	switch v := value.(type) {
 	case string:
 		return v
+	case json.Number:
+		return v.String()
 	case fmt.Stringer:
 		return v.String()
 	case nil:
@@ -118,8 +120,6 @@ func stringifyValue(value any) string {
 			return "true"
 		}
 		return "false"
-	case json.Number:
-		return v.String()
 	case float64, float32, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
 		return fmt.Sprintf("%v", v)
 	default:

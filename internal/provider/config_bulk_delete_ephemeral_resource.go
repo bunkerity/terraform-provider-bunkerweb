@@ -165,7 +165,7 @@ func (m *BunkerWebConfigBulkDeleteModel) toConfigKeys() ([]ConfigKey, diag.Diagn
 
 		service := normalizeTFService(item.Service)
 		keys = append(keys, ConfigKey{
-			Service: stringPointer(service, true),
+			Service: stringPointer(service),
 			Type:    strings.TrimSpace(item.Type.ValueString()),
 			Name:    strings.TrimSpace(item.Name.ValueString()),
 		})

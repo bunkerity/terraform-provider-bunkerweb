@@ -121,7 +121,16 @@ func (p *BunkerWebProvider) Configure(ctx context.Context, req provider.Configur
 		return
 	}
 
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		resp.Diagnostics.AddError(
+			"Unexpected HTTP Transport Type",
+			"http.DefaultTransport is not an *http.Transport; unable to configure custom transport",
+		)
+		return
+	}
+
+	transport := defaultTransport.Clone()
 	if skipTLSVerify {
 		if transport.TLSClientConfig == nil {
 			transport.TLSClientConfig = &tls.Config{}

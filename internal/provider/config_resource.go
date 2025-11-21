@@ -124,7 +124,7 @@ func (r *BunkerWebConfigResource) Create(ctx context.Context, req resource.Creat
 
 	service := normalizeTFService(plan.Service)
 	cfg, err := r.client.CreateConfig(ctx, ConfigCreateRequest{
-		Service: stringPointer(service, true),
+		Service: stringPointer(service),
 		Type:    plan.Type.ValueString(),
 		Name:    plan.Name.ValueString(),
 		Data:    plan.Data.ValueString(),
@@ -134,7 +134,7 @@ func (r *BunkerWebConfigResource) Create(ctx context.Context, req resource.Creat
 		return
 	}
 
-	resp.Diagnostics.Append(plan.populateFromConfig(ctx, cfg)...)
+	resp.Diagnostics.Append(plan.populateFromConfig(cfg)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -174,7 +174,7 @@ func (r *BunkerWebConfigResource) Read(ctx context.Context, req resource.ReadReq
 		return
 	}
 
-	resp.Diagnostics.Append(state.populateFromConfig(ctx, cfg)...)
+	resp.Diagnostics.Append(state.populateFromConfig(cfg)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -208,7 +208,7 @@ func (r *BunkerWebConfigResource) Update(ctx context.Context, req resource.Updat
 		return
 	}
 
-	resp.Diagnostics.Append(plan.populateFromConfig(ctx, cfg)...)
+	resp.Diagnostics.Append(plan.populateFromConfig(cfg)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -263,7 +263,7 @@ func (r *BunkerWebConfigResource) ImportState(ctx context.Context, req resource.
 	})...)
 }
 
-func (m *BunkerWebConfigResourceModel) populateFromConfig(ctx context.Context, cfg *bunkerWebConfig) diag.Diagnostics {
+func (m *BunkerWebConfigResourceModel) populateFromConfig(cfg *bunkerWebConfig) diag.Diagnostics {
 	if cfg == nil {
 		return diag.Diagnostics{diag.NewErrorDiagnostic("Populate Config", "received nil config")}
 	}
@@ -307,7 +307,7 @@ func (m *BunkerWebConfigResourceModel) toConfigKey() (ConfigKey, diag.Diagnostic
 	service := normalizeTFService(m.Service)
 
 	return ConfigKey{
-		Service: stringPointer(service, true),
+		Service: stringPointer(service),
 		Type:    m.Type.ValueString(),
 		Name:    m.Name.ValueString(),
 	}, diags
@@ -328,8 +328,8 @@ func buildConfigID(service, cfgType, name string) string {
 	return fmt.Sprintf("%s/%s/%s", service, cfgType, name)
 }
 
-func stringPointer(value string, omitIfGlobal bool) *string {
-	if omitIfGlobal && strings.EqualFold(value, "global") {
+func stringPointer(value string) *string {
+	if strings.EqualFold(value, "global") {
 		return nil
 	}
 	v := value

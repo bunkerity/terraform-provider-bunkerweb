@@ -168,10 +168,7 @@ func (r *BunkerWebGlobalConfigResource) Read(ctx context.Context, req resource.R
 		return
 	}
 
-	preferJSON := false
-	if !state.ValueJSON.IsNull() && !state.ValueJSON.IsUnknown() {
-		preferJSON = true
-	}
+	preferJSON := !state.ValueJSON.IsNull() && !state.ValueJSON.IsUnknown()
 
 	state.ID = types.StringValue(key)
 	state.Key = types.StringValue(key)
