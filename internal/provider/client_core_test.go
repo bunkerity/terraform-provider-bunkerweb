@@ -14,7 +14,7 @@ import (
 
 func TestBunkerWebClientPing(t *testing.T) {
 	api := newFakeBunkerWebAPI(t)
-	client, err := newBunkerWebClient(api.URL(), nil, "")
+	client, err := newBunkerWebClient(api.URL(), nil, "", "", "")
 	if err != nil {
 		t.Fatalf("newBunkerWebClient: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestBunkerWebClientPing(t *testing.T) {
 
 func TestBunkerWebClientHealth(t *testing.T) {
 	api := newFakeBunkerWebAPI(t)
-	client, err := newBunkerWebClient(api.URL(), nil, "")
+	client, err := newBunkerWebClient(api.URL(), nil, "", "", "")
 	if err != nil {
 		t.Fatalf("newBunkerWebClient: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestBunkerWebClientHealth(t *testing.T) {
 
 func TestBunkerWebClientLogin(t *testing.T) {
 	api := newFakeBunkerWebAPI(t)
-	client, err := newBunkerWebClient(api.URL(), nil, "")
+	client, err := newBunkerWebClient(api.URL(), nil, "", "", "")
 	if err != nil {
 		t.Fatalf("newBunkerWebClient: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestBunkerWebClientLogin(t *testing.T) {
 
 func TestBunkerWebClientLoginValidation(t *testing.T) {
 	api := newFakeBunkerWebAPI(t)
-	client, err := newBunkerWebClient(api.URL(), nil, "")
+	client, err := newBunkerWebClient(api.URL(), nil, "", "", "")
 	if err != nil {
 		t.Fatalf("newBunkerWebClient: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestBunkerWebClientLoginValidation(t *testing.T) {
 
 func TestBunkerWebClientDeleteInstances(t *testing.T) {
 	api := newFakeBunkerWebAPI(t)
-	client, err := newBunkerWebClient(api.URL(), nil, "")
+	client, err := newBunkerWebClient(api.URL(), nil, "", "", "")
 	if err != nil {
 		t.Fatalf("newBunkerWebClient: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestBunkerWebClientDeleteInstances(t *testing.T) {
 
 func TestBunkerWebClientInstancePingActions(t *testing.T) {
 	api := newFakeBunkerWebAPI(t)
-	client, err := newBunkerWebClient(api.URL(), nil, "")
+	client, err := newBunkerWebClient(api.URL(), nil, "", "", "")
 	if err != nil {
 		t.Fatalf("newBunkerWebClient: %v", err)
 	}
@@ -192,7 +192,7 @@ func TestBunkerWebClientInstancePingActions(t *testing.T) {
 
 func TestBunkerWebClientInstanceReloadActions(t *testing.T) {
 	api := newFakeBunkerWebAPI(t)
-	client, err := newBunkerWebClient(api.URL(), nil, "")
+	client, err := newBunkerWebClient(api.URL(), nil, "", "", "")
 	if err != nil {
 		t.Fatalf("newBunkerWebClient: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestBunkerWebClientInstanceReloadActions(t *testing.T) {
 
 func TestBunkerWebClientInstanceStopActions(t *testing.T) {
 	api := newFakeBunkerWebAPI(t)
-	client, err := newBunkerWebClient(api.URL(), nil, "")
+	client, err := newBunkerWebClient(api.URL(), nil, "", "", "")
 	if err != nil {
 		t.Fatalf("newBunkerWebClient: %v", err)
 	}
@@ -259,7 +259,7 @@ func TestBunkerWebClientInstanceStopActions(t *testing.T) {
 
 func TestBunkerWebClientConvertService(t *testing.T) {
 	api := newFakeBunkerWebAPI(t)
-	client, err := newBunkerWebClient(api.URL(), nil, "")
+	client, err := newBunkerWebClient(api.URL(), nil, "", "", "")
 	if err != nil {
 		t.Fatalf("newBunkerWebClient: %v", err)
 	}
@@ -295,7 +295,7 @@ func TestBunkerWebClientConvertService(t *testing.T) {
 
 func TestBunkerWebClientUpdateGlobalConfig(t *testing.T) {
 	api := newFakeBunkerWebAPI(t)
-	client, err := newBunkerWebClient(api.URL(), nil, "")
+	client, err := newBunkerWebClient(api.URL(), nil, "", "", "")
 	if err != nil {
 		t.Fatalf("newBunkerWebClient: %v", err)
 	}
@@ -349,7 +349,7 @@ func TestBunkerWebClientUpdateGlobalConfig(t *testing.T) {
 
 func TestBunkerWebClientDeleteConfigs(t *testing.T) {
 	api := newFakeBunkerWebAPI(t)
-	client, err := newBunkerWebClient(api.URL(), nil, "")
+	client, err := newBunkerWebClient(api.URL(), nil, "", "", "")
 	if err != nil {
 		t.Fatalf("newBunkerWebClient: %v", err)
 	}
@@ -392,7 +392,7 @@ func TestBunkerWebClientDeleteConfigs(t *testing.T) {
 
 func TestBunkerWebClientUploadConfigs(t *testing.T) {
 	api := newFakeBunkerWebAPI(t)
-	client, err := newBunkerWebClient(api.URL(), nil, "")
+	client, err := newBunkerWebClient(api.URL(), nil, "", "", "")
 	if err != nil {
 		t.Fatalf("newBunkerWebClient: %v", err)
 	}
@@ -441,7 +441,7 @@ func TestBunkerWebClientUploadConfigs(t *testing.T) {
 
 func TestBunkerWebClientUpdateConfigFromUpload(t *testing.T) {
 	api := newFakeBunkerWebAPI(t)
-	client, err := newBunkerWebClient(api.URL(), nil, "")
+	client, err := newBunkerWebClient(api.URL(), nil, "", "", "")
 	if err != nil {
 		t.Fatalf("newBunkerWebClient: %v", err)
 	}
@@ -499,7 +499,7 @@ func TestBunkerWebClientUpdateConfigFromUpload(t *testing.T) {
 
 func TestBunkerWebClientListConfigs(t *testing.T) {
 	api := newFakeBunkerWebAPI(t)
-	client, err := newBunkerWebClient(api.URL(), nil, "")
+	client, err := newBunkerWebClient(api.URL(), nil, "", "", "")
 	if err != nil {
 		t.Fatalf("newBunkerWebClient: %v", err)
 	}
@@ -566,7 +566,7 @@ func TestBunkerWebClientListConfigs(t *testing.T) {
 
 func TestBunkerWebClientBanBulk(t *testing.T) {
 	api := newFakeBunkerWebAPI(t)
-	client, err := newBunkerWebClient(api.URL(), nil, "")
+	client, err := newBunkerWebClient(api.URL(), nil, "", "", "")
 	if err != nil {
 		t.Fatalf("newBunkerWebClient: %v", err)
 	}
@@ -625,7 +625,7 @@ func TestBunkerWebClientBanBulk(t *testing.T) {
 
 func TestBunkerWebClientPluginLifecycle(t *testing.T) {
 	api := newFakeBunkerWebAPI(t)
-	client, err := newBunkerWebClient(api.URL(), nil, "")
+	client, err := newBunkerWebClient(api.URL(), nil, "", "", "")
 	if err != nil {
 		t.Fatalf("newBunkerWebClient: %v", err)
 	}

@@ -76,5 +76,7 @@ output "bunkerweb_service_id" {
 ### Optional
 
 - `api_endpoint` (String) Base URL for the BunkerWeb API. Defaults to `https://127.0.0.1:5000/api` if neither the attribute nor `BUNKERWEB_API_ENDPOINT` environment variable are set.
-- `api_token` (String, Sensitive) API token used to authenticate with BunkerWeb. Can also be provided via the `BUNKERWEB_API_TOKEN` environment variable.
+- `api_password` (String, Sensitive) Password for HTTP Basic authentication. Can also be provided via the `BUNKERWEB_API_PASSWORD` environment variable. Must be used together with `api_username`.
+- `api_token` (String, Sensitive) API token used to authenticate with BunkerWeb (Bearer authentication). Can also be provided via the `BUNKERWEB_API_TOKEN` environment variable. Either `api_token` or both `api_username` and `api_password` must be provided.
+- `api_username` (String) Username for HTTP Basic authentication. Can also be provided via the `BUNKERWEB_API_USERNAME` environment variable. Must be used together with `api_password`. If provided, the provider will use Basic auth to obtain a Bearer token.
 - `skip_tls_verify` (Boolean) Disables TLS certificate validation when set to true. Useful for development environments only.
