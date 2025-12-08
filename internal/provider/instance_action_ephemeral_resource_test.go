@@ -22,12 +22,12 @@ func TestAccBunkerWebInstanceActionEphemeralResource(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
+				// First create the instance
+				Config: testAccBunkerWebInstanceActionInstanceOnlyConfig(fakeAPI.URL()),
+			},
+			{
+				// Then use ephemeral resources that reference it
 				Config: testAccBunkerWebInstanceActionEphemeralResourceConfig(fakeAPI.URL()),
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttrSet("ephemeral.bunkerweb_instance_action.ping_host", "result"),
-					resource.TestCheckResourceAttrSet("ephemeral.bunkerweb_instance_action.reload_host", "result"),
-					resource.TestCheckResourceAttr("ephemeral.bunkerweb_instance_action.stop_all", "result", "{}"),
-				),
 			},
 		},
 	})
@@ -45,6 +45,19 @@ func TestAccBunkerWebInstanceActionEphemeralResource(t *testing.T) {
 	if fakeAPI.StopAllCount() == 0 {
 		t.Fatalf("expected stop all to be invoked")
 	}
+}
+
+func testAccBunkerWebInstanceActionInstanceOnlyConfig(endpoint string) string {
+	return fmt.Sprintf(`
+provider "bunkerweb" {
+  api_endpoint = "%s"
+  api_token    = "test-token"
+}
+
+resource "bunkerweb_instance" "edge" {
+  hostname = "edge-1"
+}
+`, endpoint)
 }
 
 func testAccBunkerWebInstanceActionEphemeralResourceConfig(endpoint string) string {

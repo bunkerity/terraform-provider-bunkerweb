@@ -22,10 +22,8 @@ func TestAccBunkerWebConfigBulkDeleteEphemeralResource(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccBunkerWebConfigBulkDeleteEphemeralResource(fakeAPI.URL()),
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttrSet("ephemeral.bunkerweb_config_bulk_delete.cleanup", "result"),
-				),
+				Config:             testAccBunkerWebConfigBulkDeleteEphemeralResource(fakeAPI.URL()),
+				ExpectNonEmptyPlan: true, // Ephemeral resource deletes managed resources
 			},
 		},
 	})

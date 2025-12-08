@@ -36,6 +36,10 @@ func TestAccBunkerWebGlobalConfigResource(t *testing.T) {
 				ResourceName:      "bunkerweb_global_config_setting.retry",
 				ImportState:       true,
 				ImportStateVerify: true,
+				ImportStateVerifyIgnore: []string{
+					"value",      // Import always returns value (not value_json)
+					"value_json", // The format (value vs value_json) is not preserved during import
+				},
 			},
 		},
 	})

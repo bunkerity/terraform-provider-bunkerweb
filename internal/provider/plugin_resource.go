@@ -42,7 +42,9 @@ func (r *BunkerWebPluginResource) Metadata(_ context.Context, req resource.Metad
 
 func (r *BunkerWebPluginResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Uploads and manages a single BunkerWeb plugin package via the control plane.",
+		MarkdownDescription: "Uploads and manages a single BunkerWeb plugin package via the control plane.\n\n" +
+			"**Note:** When importing an existing plugin, the `name`, `content`, and `method` attributes " +
+			"are not returned by the API and must be provided in the configuration file.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,

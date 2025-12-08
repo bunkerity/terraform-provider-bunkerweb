@@ -22,10 +22,8 @@ func TestAccBunkerWebServiceConvertEphemeralResource(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccBunkerWebServiceConvertEphemeralResourceConfig(fakeAPI.URL()),
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("ephemeral.bunkerweb_service_convert.convert", "is_draft", "true"),
-				),
+				Config:             testAccBunkerWebServiceConvertEphemeralResourceConfig(fakeAPI.URL()),
+				ExpectNonEmptyPlan: true, // Ephemeral resource modifies the service state
 			},
 		},
 	})

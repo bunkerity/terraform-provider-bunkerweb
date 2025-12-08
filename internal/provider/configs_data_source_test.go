@@ -20,7 +20,7 @@ func TestAccBunkerWebConfigsDataSource(t *testing.T) {
 			{
 				Config: testAccBunkerWebConfigsDataSourceConfig(fakeAPI.URL()),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("data.bunkerweb_configs.all", "configs.#", "1"),
+					resource.TestCheckResourceAttr("data.bunkerweb_configs.all", "configs.#", "2"),
 					resource.TestCheckResourceAttr("data.bunkerweb_configs.global", "configs.#", "1"),
 				),
 			},
@@ -42,11 +42,20 @@ resource "bunkerweb_config" "app" {
   data    = "content"
 }
 
-data "bunkerweb_configs" "all" {}
+resource "bunkerweb_config" "global_conf" {
+  type = "http"
+  name = "global.conf"
+  data = "global content"
+}
+
+data "bunkerweb_configs" "all" {
+  depends_on = [bunkerweb_config.app, bunkerweb_config.global_conf]
+}
 
 data "bunkerweb_configs" "global" {
-  service   = "global"
-  with_data = true
+  service    = "global"
+  with_data  = true
+  depends_on = [bunkerweb_config.global_conf]
 }
 
 `, endpoint)

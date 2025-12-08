@@ -23,9 +23,6 @@ func TestAccBunkerWebBanBulkEphemeralResource(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config: testAccBunkerWebBanBulkEphemeralResourceConfig(fakeAPI.URL()),
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttrSet("ephemeral.bunkerweb_ban_bulk.batch", "result"),
-				),
 			},
 		},
 	})

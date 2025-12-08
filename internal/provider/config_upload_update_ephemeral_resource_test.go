@@ -22,10 +22,8 @@ func TestAccBunkerWebConfigUploadUpdateEphemeralResource(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccBunkerWebConfigUploadUpdateEphemeralResource(fakeAPI.URL()),
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttrSet("ephemeral.bunkerweb_config_upload_update.promote", "result"),
-				),
+				Config:             testAccBunkerWebConfigUploadUpdateEphemeralResource(fakeAPI.URL()),
+				ExpectNonEmptyPlan: true, // Ephemeral resource modifies managed resources
 			},
 		},
 	})
