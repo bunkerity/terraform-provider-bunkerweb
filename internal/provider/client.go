@@ -22,9 +22,11 @@ import (
 )
 
 type bunkerWebClient struct {
-	baseURL    *url.URL
-	httpClient *http.Client
-	apiToken   string
+	baseURL     *url.URL
+	httpClient  *http.Client
+	apiToken    string
+	apiUsername string
+	apiPassword string
 }
 
 type bunkerWebAPIError struct {
@@ -150,7 +152,7 @@ type bunkerWebAPIEnvelope struct {
 	Data    json.RawMessage `json:"data"`
 }
 
-func newBunkerWebClient(endpoint string, httpClient *http.Client, token string) (*bunkerWebClient, error) {
+func newBunkerWebClient(endpoint string, httpClient *http.Client, token, username, password string) (*bunkerWebClient, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("api endpoint must be provided")
 	}
@@ -174,9 +176,11 @@ func newBunkerWebClient(endpoint string, httpClient *http.Client, token string) 
 	}
 
 	return &bunkerWebClient{
-		baseURL:    parsed,
-		httpClient: client,
-		apiToken:   token,
+		baseURL:     parsed,
+		httpClient:  client,
+		apiToken:    token,
+		apiUsername: username,
+		apiPassword: password,
 	}, nil
 }
 
@@ -220,8 +224,15 @@ func (c *bunkerWebClient) newRawRequest(ctx context.Context, method, endpoint st
 		req.Header.Set("Content-Type", contentType)
 	}
 
+	// Set authentication header
 	if c.apiToken != "" {
+		// Bearer token authentication
 		req.Header.Set("Authorization", "Bearer "+c.apiToken)
+	} else if c.apiUsername != "" && c.apiPassword != "" {
+		// HTTP Basic authentication
+		credentials := c.apiUsername + ":" + c.apiPassword
+		encoded := base64.StdEncoding.EncodeToString([]byte(credentials))
+		req.Header.Set("Authorization", "Basic "+encoded)
 	}
 
 	return req, nil
@@ -267,7 +278,8 @@ func (c *bunkerWebClient) do(ctx context.Context, req *http.Request, out interfa
 		return &bunkerWebAPIError{StatusCode: statusCode, Message: msg}
 	}
 
-	if statusCode < 200 || statusCode >= 300 || strings.ToLower(envelope.Status) != "ok" {
+	status := strings.ToLower(envelope.Status)
+	if statusCode < 200 || statusCode >= 300 || (status != "ok" && status != "success") {
 		msg := envelope.Message
 		if msg == "" {
 			msg = strings.TrimSpace(string(body))

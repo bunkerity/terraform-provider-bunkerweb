@@ -25,6 +25,8 @@ const (
 	defaultAPIEndpoint    = "https://127.0.0.1:5000/api"
 	envAPIEndpoint        = "BUNKERWEB_API_ENDPOINT"
 	envAPIToken           = "BUNKERWEB_API_TOKEN"
+	envAPIUsername        = "BUNKERWEB_API_USERNAME"
+	envAPIPassword        = "BUNKERWEB_API_PASSWORD"
 	defaultRequestTimeout = 30 * time.Second
 )
 
@@ -45,6 +47,8 @@ type BunkerWebProvider struct {
 type BunkerWebProviderModel struct {
 	APIEndpoint   types.String `tfsdk:"api_endpoint"`
 	APIToken      types.String `tfsdk:"api_token"`
+	APIUsername   types.String `tfsdk:"api_username"`
+	APIPassword   types.String `tfsdk:"api_password"`
 	SkipTLSVerify types.Bool   `tfsdk:"skip_tls_verify"`
 }
 
@@ -61,7 +65,16 @@ func (p *BunkerWebProvider) Schema(ctx context.Context, req provider.SchemaReque
 				Optional:            true,
 			},
 			"api_token": schema.StringAttribute{
-				MarkdownDescription: "API token used to authenticate with BunkerWeb. Can also be provided via the `" + envAPIToken + "` environment variable.",
+				MarkdownDescription: "API token used to authenticate with BunkerWeb (Bearer authentication). Can also be provided via the `" + envAPIToken + "` environment variable. Either `api_token` or both `api_username` and `api_password` must be provided.",
+				Optional:            true,
+				Sensitive:           true,
+			},
+			"api_username": schema.StringAttribute{
+				MarkdownDescription: "Username for HTTP Basic authentication. Can also be provided via the `" + envAPIUsername + "` environment variable. Must be used together with `api_password`. If provided, the provider will use Basic auth to obtain a Bearer token.",
+				Optional:            true,
+			},
+			"api_password": schema.StringAttribute{
+				MarkdownDescription: "Password for HTTP Basic authentication. Can also be provided via the `" + envAPIPassword + "` environment variable. Must be used together with `api_username`.",
 				Optional:            true,
 				Sensitive:           true,
 			},
@@ -102,6 +115,7 @@ func (p *BunkerWebProvider) Configure(ctx context.Context, req provider.Configur
 		skipTLSVerify = data.SkipTLSVerify.ValueBool()
 	}
 
+	// Collect authentication credentials from config or environment
 	apiToken := ""
 	if !data.APIToken.IsNull() && !data.APIToken.IsUnknown() {
 		apiToken = data.APIToken.ValueString()
@@ -109,15 +123,56 @@ func (p *BunkerWebProvider) Configure(ctx context.Context, req provider.Configur
 		apiToken = envVal
 	}
 
-	if apiToken == "" {
-		resp.Diagnostics.AddAttributeError(
-			path.Root("api_token"),
-			"Missing API Token",
-			"Set the `api_token` attribute or provide the `"+envAPIToken+"` environment variable to authenticate against the BunkerWeb API.",
-		)
+	apiUsername := ""
+	if !data.APIUsername.IsNull() && !data.APIUsername.IsUnknown() {
+		apiUsername = data.APIUsername.ValueString()
+	} else if envVal := os.Getenv(envAPIUsername); envVal != "" {
+		apiUsername = envVal
 	}
 
-	if resp.Diagnostics.HasError() {
+	apiPassword := ""
+	if !data.APIPassword.IsNull() && !data.APIPassword.IsUnknown() {
+		apiPassword = data.APIPassword.ValueString()
+	} else if envVal := os.Getenv(envAPIPassword); envVal != "" {
+		apiPassword = envVal
+	}
+
+	// Validate authentication methods
+	hasToken := apiToken != ""
+	hasBasicAuth := apiUsername != "" && apiPassword != ""
+
+	if !hasToken && !hasBasicAuth {
+		resp.Diagnostics.AddError(
+			"Missing Authentication Credentials",
+			"Either `api_token` (Bearer authentication) or both `api_username` and `api_password` (Basic authentication) must be provided. "+
+				"You can set these via provider attributes or environment variables ("+envAPIToken+", "+envAPIUsername+", "+envAPIPassword+").",
+		)
+		return
+	}
+
+	if hasToken && hasBasicAuth {
+		resp.Diagnostics.AddError(
+			"Conflicting Authentication Methods",
+			"Both `api_token` and `api_username`/`api_password` were provided. Please use only one authentication method.",
+		)
+		return
+	}
+
+	if apiUsername != "" && apiPassword == "" {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("api_password"),
+			"Missing Password",
+			"When using Basic authentication, both `api_username` and `api_password` must be provided.",
+		)
+		return
+	}
+
+	if apiPassword != "" && apiUsername == "" {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("api_username"),
+			"Missing Username",
+			"When using Basic authentication, both `api_username` and `api_password` must be provided.",
+		)
 		return
 	}
 
@@ -143,7 +198,8 @@ func (p *BunkerWebProvider) Configure(ctx context.Context, req provider.Configur
 		Transport: transport,
 	}
 
-	client, err := newBunkerWebClient(apiEndpoint, httpClient, apiToken)
+	// Create client with either Bearer token or Basic auth credentials
+	client, err := newBunkerWebClient(apiEndpoint, httpClient, apiToken, apiUsername, apiPassword)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to Configure BunkerWeb Client",

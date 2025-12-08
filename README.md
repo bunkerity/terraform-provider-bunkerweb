@@ -50,6 +50,25 @@ go install ./...
 
 The compiled provider binary will be placed in `$GOBIN` (`$GOPATH/bin` by default).
 
+### Building and Testing Locally
+
+For local development and testing against a live BunkerWeb instance:
+
+```shell
+# Quick start - automated workflow
+cd test-local
+./test-provider.sh
+
+# Or manually
+go build -o terraform-provider-bunkerweb
+cp terraform-provider-bunkerweb ~/.terraform.d/plugins/local/bunkerity/bunkerweb/0.0.1/linux_amd64/terraform-provider-bunkerweb_v0.0.1
+cd test-local
+terraform init
+terraform plan
+```
+
+See the [`test-local/`](test-local/) directory for comprehensive integration tests that validate all provider functionality against a live BunkerWeb API.
+
 ## Testing
 
 Run the full unit test suite with:
@@ -59,6 +78,16 @@ go test ./...
 ```
 
 Acceptance-style tests exercise the provider against a local in-memory API defined in `internal/provider/test_server_test.go`, so they are safe to run without contacting a live BunkerWeb instance.
+
+### Integration Testing
+
+The `test-local/` directory contains a comprehensive test suite with 22 tests covering:
+- All data sources (global_config, plugins, jobs, cache, service, configs)
+- All resources (instance, service, global_config_setting, config, ban, plugin)
+- All ephemeral resources (snapshots, actions, conversions, uploads, jobs)
+- All functions (service_identifier)
+
+Quick reference: `cd test-local && ./quick-ref.sh`
 
 ## Generating Documentation
 
