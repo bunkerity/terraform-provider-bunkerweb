@@ -26,7 +26,7 @@ This repository contains the Terraform provider that manages [BunkerWeb](https:/
 
 ```terraform
 provider "bunkerweb" {
-	api_endpoint = "https://127.0.0.1:5000/api"
+	api_endpoint = "https://127.0.0.1:8888"
 	api_token    = var.bunkerweb_token
 }
 
