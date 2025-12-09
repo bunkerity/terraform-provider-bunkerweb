@@ -4,11 +4,14 @@ page_title: "bunkerweb_plugin Resource - bunkerweb"
 subcategory: ""
 description: |-
   Uploads and manages a single BunkerWeb plugin package via the control plane.
+  Note: When importing an existing plugin, the name, content, and method attributes are not returned by the API and must be provided in the configuration file.
 ---
 
 # bunkerweb_plugin (Resource)
 
 Uploads and manages a single BunkerWeb plugin package via the control plane.
+
+**Note:** When importing an existing plugin, the `name`, `content`, and `method` attributes are not returned by the API and must be provided in the configuration file.
 
 
 
