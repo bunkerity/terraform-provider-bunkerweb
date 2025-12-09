@@ -1,8 +1,8 @@
 terraform {
   required_providers {
     bunkerweb = {
-      source  = "local/bunkerity/bunkerweb"
-      version = "0.1.0"
+      source  = "bunkerity/bunkerweb"
+      version = "~> 0.0.1"
     }
   }
 }
