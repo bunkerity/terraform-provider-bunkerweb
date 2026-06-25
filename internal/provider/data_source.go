@@ -97,7 +97,7 @@ func (d *BunkerWebDataSource) Read(ctx context.Context, req datasource.ReadReque
 		return
 	}
 
-	service, err := d.client.GetService(ctx, data.ID.ValueString())
+	got, err := d.client.GetService(ctx, data.ID.ValueString())
 	if err != nil {
 		var apiErr *bunkerWebAPIError
 		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
@@ -109,7 +109,7 @@ func (d *BunkerWebDataSource) Read(ctx context.Context, req datasource.ReadReque
 		return
 	}
 
-	populateDiags := data.populateFromService(ctx, service)
+	populateDiags := data.populateFromService(ctx, serviceFromConfig(got.Service, got.Config))
 	resp.Diagnostics.Append(populateDiags...)
 	if resp.Diagnostics.HasError() {
 		return

@@ -53,12 +53,16 @@ type bunkerWebService struct {
 	Variables  map[string]string `json:"variables"`
 }
 
-type bunkerWebServicePayload struct {
-	Service bunkerWebService `json:"service"`
-}
-
 type bunkerWebServicesPayload struct {
 	Services []bunkerWebService `json:"services"`
+}
+
+// bunkerWebServiceConfig is the shape returned by GET /services/{id}: the service
+// id as a string plus a flat map of its non-default settings (keys are unprefixed
+// when requested with methods=false).
+type bunkerWebServiceConfig struct {
+	Service string            `json:"service"`
+	Config  map[string]string `json:"config"`
 }
 
 type bunkerWebInstance struct {
@@ -79,7 +83,11 @@ type bunkerWebInstancesPayload struct {
 	Instances []bunkerWebInstance `json:"instances"`
 }
 
-type bunkerWebGlobalConfigPayload map[string]any
+// bunkerWebGlobalConfigResponse wraps the settings map the API nests under the
+// top-level "settings" key on GET /global_config.
+type bunkerWebGlobalConfigResponse struct {
+	Settings map[string]any `json:"settings"`
+}
 
 type bunkerWebConfig struct {
 	Service string `json:"service"`
@@ -146,10 +154,15 @@ type bunkerWebLoginPayload struct {
 	Token string `json:"token"`
 }
 
-type bunkerWebAPIEnvelope struct {
+// bunkerWebAPIResponse captures the envelope fields the BunkerWeb API places at
+// the top level of every response body. The actual payload (e.g. "config",
+// "service", "instances", "token") sits alongside these fields at the top level
+// too, so success bodies are decoded directly into the target struct rather than
+// out of a nested "data" object.
+type bunkerWebAPIResponse struct {
 	Status  string          `json:"status"`
 	Message string          `json:"message"`
-	Data    json.RawMessage `json:"data"`
+	Detail  json.RawMessage `json:"detail"`
 }
 
 func newBunkerWebClient(endpoint string, httpClient *http.Client, token, username, password string) (*bunkerWebClient, error) {
@@ -256,49 +269,70 @@ func (c *bunkerWebClient) do(ctx context.Context, req *http.Request, out interfa
 	}
 
 	statusCode := resp.StatusCode
+	httpOK := statusCode >= 200 && statusCode < 300
 
 	if len(body) == 0 {
-		if statusCode >= 200 && statusCode < 300 {
+		if httpOK {
 			return nil
 		}
 
 		return &bunkerWebAPIError{StatusCode: statusCode, Message: strings.TrimSpace(resp.Status)}
 	}
 
-	var envelope bunkerWebAPIEnvelope
-	if err := json.Unmarshal(body, &envelope); err != nil {
-		if statusCode >= 200 && statusCode < 300 {
-			return fmt.Errorf("decode response envelope: %w", err)
-		}
+	// Best-effort decode of the top-level envelope fields used only for error
+	// gating. The BunkerWeb API returns {"status":"success", <named payload>} on
+	// success, {"status":"error","message":...} for handler errors, and
+	// {"detail":...} for FastAPI built-in errors (e.g. 404/405/422). POST /auth
+	// returns {"token":...} with no status field, so an empty status on a 2xx
+	// response is treated as success.
+	var meta bunkerWebAPIResponse
+	_ = json.Unmarshal(body, &meta)
 
-		msg := strings.TrimSpace(string(body))
-		if msg == "" {
-			msg = resp.Status
-		}
+	status := strings.ToLower(strings.TrimSpace(meta.Status))
+	statusOK := status == "" || status == "success" || status == "ok"
+
+	if !httpOK || !statusOK {
+		msg := firstNonEmpty(
+			strings.TrimSpace(meta.Message),
+			detailToString(meta.Detail),
+			strings.TrimSpace(string(body)),
+			strings.TrimSpace(resp.Status),
+		)
 		return &bunkerWebAPIError{StatusCode: statusCode, Message: msg}
 	}
 
-	status := strings.ToLower(envelope.Status)
-	if statusCode < 200 || statusCode >= 300 || (status != "ok" && status != "success") {
-		msg := envelope.Message
-		if msg == "" {
-			msg = strings.TrimSpace(string(body))
-		}
-		if msg == "" {
-			msg = resp.Status
-		}
-		return &bunkerWebAPIError{StatusCode: statusCode, Message: msg}
-	}
-
-	if out == nil || len(envelope.Data) == 0 || string(envelope.Data) == "null" {
+	if out == nil {
 		return nil
 	}
 
-	if err := json.Unmarshal(envelope.Data, out); err != nil {
+	// Payload keys live at the top level next to "status", so decode the whole body.
+	if err := json.Unmarshal(body, out); err != nil {
 		return fmt.Errorf("decode response payload: %w", err)
 	}
 
 	return nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// detailToString renders a FastAPI "detail" field, which is either a string
+// (e.g. "Method Not Allowed") or a list of validation error objects.
+func detailToString(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return strings.TrimSpace(s)
+	}
+	return strings.TrimSpace(string(raw))
 }
 
 func (c *bunkerWebClient) CreateService(ctx context.Context, reqPayload ServiceCreateRequest) (*bunkerWebService, error) {
@@ -307,26 +341,39 @@ func (c *bunkerWebClient) CreateService(ctx context.Context, reqPayload ServiceC
 		return nil, err
 	}
 
-	var payload bunkerWebServicePayload
-	if err := c.do(ctx, req, &payload); err != nil {
+	// The API responds with {"status":"success","changed_plugins":[...]} and no
+	// service object. The identifier is the first whitespace token of server_name
+	// (matching the API: server_name.split(" ")[0]).
+	if err := c.do(ctx, req, nil); err != nil {
 		return nil, err
 	}
 
-	return &payload.Service, nil
+	return &bunkerWebService{
+		ID:         firstToken(reqPayload.ServerName),
+		ServerName: reqPayload.ServerName,
+		IsDraft:    reqPayload.IsDraft,
+		Variables:  reqPayload.Variables,
+	}, nil
 }
 
-func (c *bunkerWebClient) GetService(ctx context.Context, id string) (*bunkerWebService, error) {
-	req, err := c.newRequest(ctx, http.MethodGet, path.Join("services", id), nil)
+func (c *bunkerWebClient) GetService(ctx context.Context, id string) (*bunkerWebServiceConfig, error) {
+	// methods=false flattens each setting to its string value (the default,
+	// methods=true, wraps every value in an object).
+	req, err := c.newRequest(ctx, http.MethodGet, path.Join("services", id)+"?methods=false", nil)
 	if err != nil {
 		return nil, err
 	}
 
-	var payload bunkerWebServicePayload
+	var payload bunkerWebServiceConfig
 	if err := c.do(ctx, req, &payload); err != nil {
 		return nil, err
 	}
 
-	return &payload.Service, nil
+	if payload.Service == "" {
+		payload.Service = id
+	}
+
+	return &payload, nil
 }
 
 func (c *bunkerWebClient) UpdateService(ctx context.Context, id string, reqPayload ServiceUpdateRequest) (*bunkerWebService, error) {
@@ -335,12 +382,20 @@ func (c *bunkerWebClient) UpdateService(ctx context.Context, id string, reqPaylo
 		return nil, err
 	}
 
-	var payload bunkerWebServicePayload
-	if err := c.do(ctx, req, &payload); err != nil {
+	// PATCH returns status only; reconstruct the resulting service from the request.
+	if err := c.do(ctx, req, nil); err != nil {
 		return nil, err
 	}
 
-	return &payload.Service, nil
+	svc := &bunkerWebService{ID: id, Variables: reqPayload.Variables}
+	if reqPayload.ServerName != nil {
+		svc.ServerName = *reqPayload.ServerName
+		svc.ID = firstToken(*reqPayload.ServerName) // id follows server_name on rename
+	}
+	if reqPayload.IsDraft != nil {
+		svc.IsDraft = *reqPayload.IsDraft
+	}
+	return svc, nil
 }
 
 func (c *bunkerWebClient) DeleteService(ctx context.Context, id string) error {
@@ -516,12 +571,12 @@ func (c *bunkerWebClient) GetGlobalConfig(ctx context.Context, full, methods boo
 		return nil, err
 	}
 
-	payload := bunkerWebGlobalConfigPayload{}
+	var payload bunkerWebGlobalConfigResponse
 	if err := c.do(ctx, req, &payload); err != nil {
 		return nil, err
 	}
 
-	return payload, nil
+	return ensureMap(payload.Settings), nil
 }
 
 func (c *bunkerWebClient) UpdateGlobalConfig(ctx context.Context, settings map[string]any) (map[string]any, error) {
@@ -534,12 +589,13 @@ func (c *bunkerWebClient) UpdateGlobalConfig(ctx context.Context, settings map[s
 		return nil, err
 	}
 
-	var payload bunkerWebGlobalConfigPayload
-	if err := c.do(ctx, req, &payload); err != nil {
+	// PATCH /global_config returns status only; read the settings back so callers
+	// can observe the applied values.
+	if err := c.do(ctx, req, nil); err != nil {
 		return nil, err
 	}
 
-	return ensureMap(payload), nil
+	return c.GetGlobalConfig(ctx, true, false)
 }
 
 func (c *bunkerWebClient) CreateInstance(ctx context.Context, reqPayload InstanceCreateRequest) (*bunkerWebInstance, error) {
@@ -896,7 +952,33 @@ func (c *bunkerWebClient) DeleteConfigs(ctx context.Context, keys []ConfigKey) e
 	return c.do(ctx, req, nil)
 }
 
-func (c *bunkerWebClient) UploadConfigs(ctx context.Context, input ConfigUploadRequest) ([]bunkerWebConfig, error) {
+// bunkerWebUploadResult is the shape returned by the multipart upload endpoints
+// (POST /configs/upload, POST /plugins/upload): a list of created identifiers and
+// any per-file errors, rather than the created objects themselves.
+type bunkerWebUploadResult struct {
+	Created []string         `json:"created"`
+	Errors  []map[string]any `json:"errors"`
+}
+
+func uploadErrorsText(errs []map[string]any) string {
+	if len(errs) == 0 {
+		return "no error details returned"
+	}
+	parts := make([]string, 0, len(errs))
+	for _, e := range errs {
+		if msg, ok := e["error"]; ok {
+			parts = append(parts, fmt.Sprintf("%v", msg))
+		}
+	}
+	if len(parts) == 0 {
+		return "upload failed"
+	}
+	return strings.Join(parts, "; ")
+}
+
+// UploadConfigs uploads custom config files and returns the created config
+// identifiers ("service/type/name"); the API does not echo the config objects.
+func (c *bunkerWebClient) UploadConfigs(ctx context.Context, input ConfigUploadRequest) ([]string, error) {
 	if strings.TrimSpace(input.Type) == "" {
 		return nil, fmt.Errorf("type must be provided")
 	}
@@ -939,12 +1021,12 @@ func (c *bunkerWebClient) UploadConfigs(ctx context.Context, input ConfigUploadR
 		return nil, err
 	}
 
-	var payload bunkerWebConfigsPayload
+	var payload bunkerWebUploadResult
 	if err := c.do(ctx, req, &payload); err != nil {
 		return nil, err
 	}
 
-	return payload.Configs, nil
+	return payload.Created, nil
 }
 
 func (c *bunkerWebClient) UpdateConfigFromUpload(ctx context.Context, key ConfigKey, input ConfigUploadUpdateRequest) (*bunkerWebConfig, error) {
@@ -990,12 +1072,24 @@ func (c *bunkerWebClient) UpdateConfigFromUpload(ctx context.Context, key Config
 		return nil, err
 	}
 
-	var payload bunkerWebConfigPayload
-	if err := c.do(ctx, req, &payload); err != nil {
+	// PATCH .../upload returns only {"status":"success"}; read the (possibly
+	// renamed) config back to report its current state.
+	if err := c.do(ctx, req, nil); err != nil {
 		return nil, err
 	}
 
-	return &payload.Config, nil
+	effectiveKey := key
+	if input.NewService != nil {
+		effectiveKey.Service = stringPointer(strings.TrimSpace(*input.NewService))
+	}
+	if input.NewType != nil && strings.TrimSpace(*input.NewType) != "" {
+		effectiveKey.Type = strings.TrimSpace(*input.NewType)
+	}
+	if input.NewName != nil && strings.TrimSpace(*input.NewName) != "" {
+		effectiveKey.Name = strings.TrimSpace(*input.NewName)
+	}
+
+	return c.GetConfig(ctx, effectiveKey, true)
 }
 
 func (c *bunkerWebClient) ConvertService(ctx context.Context, id string, convertTo string) (*bunkerWebService, error) {
@@ -1014,12 +1108,13 @@ func (c *bunkerWebClient) ConvertService(ctx context.Context, id string, convert
 		return nil, err
 	}
 
-	var payload bunkerWebServicePayload
-	if err := c.do(ctx, req, &payload); err != nil {
+	// Convert returns {"status":"success","changed_plugins":[...]} with no service
+	// object; derive the resulting draft flag from the requested target state.
+	if err := c.do(ctx, req, nil); err != nil {
 		return nil, err
 	}
 
-	return &payload.Service, nil
+	return &bunkerWebService{ID: id, IsDraft: convertTo == "draft"}, nil
 }
 
 func ensureMap(in map[string]any) map[string]any {
@@ -1055,7 +1150,9 @@ func (c *bunkerWebClient) ListPlugins(ctx context.Context, pluginType string, wi
 	return payload.Plugins, nil
 }
 
-func (c *bunkerWebClient) UploadPlugins(ctx context.Context, input PluginUploadRequest) ([]bunkerWebPlugin, error) {
+// UploadPlugins uploads plugin archives and returns the created plugin ids; the
+// API does not echo plugin objects.
+func (c *bunkerWebClient) UploadPlugins(ctx context.Context, input PluginUploadRequest) ([]string, error) {
 	if len(input.Files) == 0 {
 		return nil, fmt.Errorf("at least one file is required")
 	}
@@ -1094,12 +1191,16 @@ func (c *bunkerWebClient) UploadPlugins(ctx context.Context, input PluginUploadR
 		return nil, err
 	}
 
-	var payload bunkerWebPluginsPayload
+	var payload bunkerWebUploadResult
 	if err := c.do(ctx, req, &payload); err != nil {
 		return nil, err
 	}
 
-	return payload.Plugins, nil
+	if len(payload.Created) == 0 {
+		return nil, fmt.Errorf("plugin upload created no plugins: %s", uploadErrorsText(payload.Errors))
+	}
+
+	return payload.Created, nil
 }
 
 func (c *bunkerWebClient) DeletePlugin(ctx context.Context, pluginID string) error {

@@ -87,7 +87,7 @@ func newFakeBunkerWebAPI(t *testing.T) *fakeBunkerWebAPI {
 			{Plugin: "reporter", Name: "daily", Status: "idle"},
 		},
 		pingPayload:  map[string]any{"pong": true, "now": "2024-01-01T00:00:00Z"},
-		healthStatus: map[string]any{"status": "healthy", "uptime_seconds": 1234},
+		healthStatus: map[string]any{"status": "ok"},
 		authCreds: map[string]string{
 			"admin": "secret",
 		},
@@ -118,6 +118,9 @@ func (f *fakeBunkerWebAPI) handle(w http.ResponseWriter, r *http.Request) {
 		f.handleCreateService(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/services":
 		f.handleListServices(w, r)
+	case r.Method == http.MethodDelete && r.URL.Path == "/services":
+		// The real API exposes no collection-level DELETE; FastAPI answers 405.
+		f.writeDetailError(w, http.StatusMethodNotAllowed, "Method Not Allowed")
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/services/") && strings.HasSuffix(r.URL.Path, "/convert"):
 		f.handleConvertService(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/services/"):
@@ -189,7 +192,7 @@ func (f *fakeBunkerWebAPI) handle(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodPost && r.URL.Path == "/jobs/run":
 		f.handleRunJobs(w, r)
 	default:
-		f.writeError(w, http.StatusNotFound, "not found")
+		f.writeDetailError(w, http.StatusNotFound, "Not Found")
 	}
 }
 
@@ -235,7 +238,7 @@ func (f *fakeBunkerWebAPI) handleLogin(w http.ResponseWriter, r *http.Request) {
 	f.authTokens[username] = token
 	f.mu.Unlock()
 
-	f.writeSuccess(w, bunkerWebLoginPayload{Token: token})
+	f.writeNoStatus(w, http.StatusOK, bunkerWebLoginPayload{Token: token})
 }
 
 func (f *fakeBunkerWebAPI) extractCredentials(r *http.Request, authHeader string) (string, string, error) {
@@ -279,7 +282,7 @@ func (f *fakeBunkerWebAPI) handleCreateService(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	id := deriveServiceIdentifier(req.ServerName)
+	id := firstToken(req.ServerName)
 	svc := &bunkerWebService{
 		ID:         id,
 		ServerName: req.ServerName,
@@ -291,7 +294,8 @@ func (f *fakeBunkerWebAPI) handleCreateService(w http.ResponseWriter, r *http.Re
 	f.services[id] = svc
 	f.mu.Unlock()
 
-	f.writeSuccess(w, bunkerWebServicePayload{Service: *svc})
+	// Real API returns only {"status":"success","changed_plugins":[...]}, no object.
+	f.writeSuccess(w, map[string]any{"changed_plugins": []string{}})
 }
 
 func (f *fakeBunkerWebAPI) handleListServices(w http.ResponseWriter, r *http.Request) {
@@ -329,7 +333,22 @@ func (f *fakeBunkerWebAPI) handleGetService(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	f.writeSuccess(w, bunkerWebServicePayload{Service: *svc})
+	// Real API returns {"service":"<id>","config":{<flat unprefixed settings>}}.
+	isDraft := "no"
+	if svc.IsDraft {
+		isDraft = "yes"
+	}
+	config := map[string]string{
+		// The real API stores only the first token of server_name as the
+		// per-service SERVER_NAME (services.py create_service), so mirror that.
+		"SERVER_NAME": firstToken(svc.ServerName),
+		"IS_DRAFT":    isDraft,
+	}
+	for k, v := range svc.Variables {
+		config[k] = v
+	}
+
+	f.writeSuccess(w, map[string]any{"service": svc.ID, "config": config})
 }
 
 func (f *fakeBunkerWebAPI) handleUpdateService(w http.ResponseWriter, r *http.Request) {
@@ -361,18 +380,16 @@ func (f *fakeBunkerWebAPI) handleUpdateService(w http.ResponseWriter, r *http.Re
 	}
 
 	if req.ServerName != nil {
-		newID := deriveServiceIdentifier(*req.ServerName)
+		newID := firstToken(*req.ServerName)
 		if newID != id {
 			delete(f.services, id)
 			svc.ID = newID
 			f.services[newID] = svc
 		}
 	}
-
-	updated := *svc
 	f.mu.Unlock()
 
-	f.writeSuccess(w, bunkerWebServicePayload{Service: updated})
+	f.writeSuccess(w, map[string]any{"changed_plugins": []string{}})
 }
 
 func (f *fakeBunkerWebAPI) handleDeleteService(w http.ResponseWriter, r *http.Request) {
@@ -412,11 +429,10 @@ func (f *fakeBunkerWebAPI) handleConvertService(w http.ResponseWriter, r *http.R
 		return
 	}
 	svc.IsDraft = convertTo == "draft"
-	updated := *svc
 	f.convertCalls = append(f.convertCalls, serviceConvertCall{serviceID: serviceID, target: convertTo})
 	f.mu.Unlock()
 
-	f.writeSuccess(w, bunkerWebServicePayload{Service: updated})
+	f.writeSuccess(w, map[string]any{"changed_plugins": []string{}})
 }
 
 func (f *fakeBunkerWebAPI) handleCreateInstance(w http.ResponseWriter, r *http.Request) {
@@ -718,7 +734,8 @@ func (f *fakeBunkerWebAPI) handleGetGlobalConfig(w http.ResponseWriter, r *http.
 		configCopy["__methods__"] = map[string]string{"example": "patch"}
 	}
 
-	f.writeSuccess(w, configCopy)
+	// Real API nests the settings under a top-level "settings" key.
+	f.writeSuccess(w, map[string]any{"settings": configCopy})
 }
 
 func (f *fakeBunkerWebAPI) handlePatchGlobalConfig(w http.ResponseWriter, r *http.Request) {
@@ -741,13 +758,10 @@ func (f *fakeBunkerWebAPI) handlePatchGlobalConfig(w http.ResponseWriter, r *htt
 		}
 	}
 	f.lastGlobalPatch = cloneAnyMap(payload)
-	updated := make(map[string]any, len(f.globalConfig))
-	for k, v := range f.globalConfig {
-		updated[k] = v
-	}
 	f.mu.Unlock()
 
-	f.writeSuccess(w, updated)
+	// Real API returns only {"status":"success"}; clients read settings back via GET.
+	f.writeSuccess(w, nil)
 }
 
 func (f *fakeBunkerWebAPI) handleCreateConfig(w http.ResponseWriter, r *http.Request) {
@@ -769,7 +783,8 @@ func (f *fakeBunkerWebAPI) handleCreateConfig(w http.ResponseWriter, r *http.Req
 	f.configs[key] = cfg
 	f.mu.Unlock()
 
-	f.writeSuccess(w, bunkerWebConfigPayload{Config: *cfg})
+	// Real API returns only {"status":"success"} with 201 (no config object).
+	f.writeSuccessCode(w, http.StatusCreated, nil)
 }
 
 func (f *fakeBunkerWebAPI) handleListConfigs(w http.ResponseWriter, r *http.Request) {
@@ -871,11 +886,10 @@ func (f *fakeBunkerWebAPI) handleUpdateConfig(w http.ResponseWriter, r *http.Req
 		key = configStorageKey(newService, newType, newName)
 		f.configs[key] = cfg
 	}
-
-	updated := *cfg
 	f.mu.Unlock()
 
-	f.writeSuccess(w, bunkerWebConfigPayload{Config: updated})
+	// Real API returns only {"status":"success"} (no config object).
+	f.writeSuccess(w, nil)
 }
 
 func (f *fakeBunkerWebAPI) handleDeleteConfig(w http.ResponseWriter, r *http.Request) {
@@ -944,7 +958,7 @@ func (f *fakeBunkerWebAPI) handleUploadConfigs(w http.ResponseWriter, r *http.Re
 	}
 	service := normalizeConfigService(optionalStringPointer(r.FormValue("service")))
 
-	created := make([]bunkerWebConfig, 0, len(files))
+	created := make([]string, 0, len(files))
 
 	f.mu.Lock()
 	for _, fh := range files {
@@ -966,11 +980,12 @@ func (f *fakeBunkerWebAPI) handleUploadConfigs(w http.ResponseWriter, r *http.Re
 		key := configStorageKey(service, cfgType, name)
 		cfg := &bunkerWebConfig{Service: service, Type: cfgType, Name: name, Data: string(content), Method: "api"}
 		f.configs[key] = cfg
-		created = append(created, *cfg)
+		created = append(created, fmt.Sprintf("%s/%s/%s", service, cfgType, name))
 	}
 	f.mu.Unlock()
 
-	f.writeSuccess(w, bunkerWebConfigsPayload{Configs: created})
+	// Real API returns only the created identifiers, not the config objects.
+	f.writeSuccessCode(w, http.StatusCreated, map[string]any{"created": created})
 }
 
 func (f *fakeBunkerWebAPI) handleUploadConfigUpdate(w http.ResponseWriter, r *http.Request) {
@@ -1035,10 +1050,10 @@ func (f *fakeBunkerWebAPI) handleUploadConfigUpdate(w http.ResponseWriter, r *ht
 	if newKey != originalKey {
 		delete(f.configs, originalKey)
 	}
-	updated := *cfg
 	f.mu.Unlock()
 
-	f.writeSuccess(w, bunkerWebConfigPayload{Config: updated})
+	// Real API returns only {"status":"success"}; clients re-read the config.
+	f.writeSuccess(w, nil)
 }
 
 func (f *fakeBunkerWebAPI) handleListBans(w http.ResponseWriter, _ *http.Request) {
@@ -1182,7 +1197,6 @@ func (f *fakeBunkerWebAPI) handleUploadPlugins(w http.ResponseWriter, r *http.Re
 	}
 
 	ids := make([]string, 0, len(files))
-	created := make([]bunkerWebPlugin, 0, len(files))
 
 	f.mu.Lock()
 	for _, fh := range files {
@@ -1208,7 +1222,6 @@ func (f *fakeBunkerWebAPI) handleUploadPlugins(w http.ResponseWriter, r *http.Re
 		}
 		f.plugins[id] = plugin
 		ids = append(ids, id)
-		created = append(created, *plugin)
 	}
 	if len(ids) > 0 {
 		copyBatch := make([]string, len(ids))
@@ -1217,7 +1230,8 @@ func (f *fakeBunkerWebAPI) handleUploadPlugins(w http.ResponseWriter, r *http.Re
 	}
 	f.mu.Unlock()
 
-	f.writeSuccess(w, bunkerWebPluginsPayload{Plugins: created})
+	// Real API returns only the created plugin ids, not plugin objects.
+	f.writeSuccessCode(w, http.StatusCreated, map[string]any{"created": ids})
 }
 
 func (f *fakeBunkerWebAPI) handleDeletePlugin(w http.ResponseWriter, r *http.Request) {
@@ -1462,15 +1476,49 @@ func (f *fakeBunkerWebAPI) Plugin(id string) (*bunkerWebPlugin, bool) {
 	return &copyPlugin, true
 }
 
+// writeSuccess mirrors the real BunkerWeb API: the payload's fields are merged at
+// the TOP LEVEL of the body next to "status":"success" (there is no "data" wrapper).
 func (f *fakeBunkerWebAPI) writeSuccess(w http.ResponseWriter, payload any) {
-	w.WriteHeader(http.StatusOK)
-	body := map[string]any{
-		"status": "ok",
-		"data":   payload,
+	f.writeSuccessCode(w, http.StatusOK, payload)
+}
+
+func (f *fakeBunkerWebAPI) writeSuccessCode(w http.ResponseWriter, code int, payload any) {
+	merged := map[string]json.RawMessage{}
+	if payload != nil {
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			f.t.Fatalf("failed to serialize payload: %v", err)
+		}
+		if string(raw) != "null" {
+			if err := json.Unmarshal(raw, &merged); err != nil {
+				f.t.Fatalf("success payload must be a JSON object: %v", err)
+			}
+		}
 	}
-	if err := json.NewEncoder(w).Encode(body); err != nil {
+	if _, ok := merged["status"]; !ok {
+		merged["status"] = json.RawMessage(`"success"`)
+	}
+	w.WriteHeader(code)
+	if err := json.NewEncoder(w).Encode(merged); err != nil {
 		f.t.Fatalf("failed to serialize payload: %v", err)
 	}
+}
+
+// writeNoStatus writes a body with no "status" field (e.g. POST /auth -> {"token":...}).
+func (f *fakeBunkerWebAPI) writeNoStatus(w http.ResponseWriter, code int, payload any) {
+	w.WriteHeader(code)
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		f.t.Fatalf("failed to serialize payload: %v", err)
+	}
+}
+
+// writeDetailError mimics FastAPI built-in errors (e.g. 404/405): {"detail": "..."}.
+func (f *fakeBunkerWebAPI) writeDetailError(w http.ResponseWriter, status int, detail string) {
+	if status == 0 {
+		status = http.StatusInternalServerError
+	}
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{"detail": detail})
 }
 
 func (f *fakeBunkerWebAPI) writeError(w http.ResponseWriter, status int, message string) {
@@ -1481,7 +1529,6 @@ func (f *fakeBunkerWebAPI) writeError(w http.ResponseWriter, status int, message
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"status":  "error",
 		"message": message,
-		"data":    nil,
 	})
 }
 

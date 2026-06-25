@@ -123,21 +123,31 @@ func (r *BunkerWebConfigResource) Create(ctx context.Context, req resource.Creat
 	}
 
 	service := normalizeTFService(plan.Service)
-	cfg, err := r.client.CreateConfig(ctx, ConfigCreateRequest{
+	if _, err := r.client.CreateConfig(ctx, ConfigCreateRequest{
 		Service: stringPointer(service),
 		Type:    plan.Type.ValueString(),
 		Name:    plan.Name.ValueString(),
 		Data:    plan.Data.ValueString(),
-	})
-	if err != nil {
+	}); err != nil {
 		resp.Diagnostics.AddError("Unable to Create Config", err.Error())
 		return
 	}
 
-	resp.Diagnostics.Append(plan.populateFromConfig(cfg)...)
+	// POST /configs returns only {"status":"success"}, so read the config back to
+	// obtain the computed `method` while keeping the planned scalar values.
+	key, diags := plan.toConfigKey()
+	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	cfg, err := r.client.GetConfig(ctx, key, true)
+	if err != nil {
+		resp.Diagnostics.AddError("Unable to Read Config After Create", err.Error())
+		return
+	}
+
+	plan.populateFromPlan(service, cfg)
 
 	tflog.Info(ctx, "created bunkerweb config", map[string]any{"id": plan.ID.ValueString()})
 
@@ -202,16 +212,19 @@ func (r *BunkerWebConfigResource) Update(ctx context.Context, req resource.Updat
 
 	data := plan.Data.ValueString()
 
-	cfg, err := r.client.UpdateConfig(ctx, key, ConfigUpdateRequest{Data: &data})
-	if err != nil {
+	if _, err := r.client.UpdateConfig(ctx, key, ConfigUpdateRequest{Data: &data}); err != nil {
 		resp.Diagnostics.AddError("Unable to Update Config", err.Error())
 		return
 	}
 
-	resp.Diagnostics.Append(plan.populateFromConfig(cfg)...)
-	if resp.Diagnostics.HasError() {
+	// PATCH returns only {"status":"success"}; read back for the computed `method`.
+	cfg, err := r.client.GetConfig(ctx, key, true)
+	if err != nil {
+		resp.Diagnostics.AddError("Unable to Read Config After Update", err.Error())
 		return
 	}
+
+	plan.populateFromPlan(normalizeTFService(plan.Service), cfg)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
@@ -273,9 +286,17 @@ func (m *BunkerWebConfigResourceModel) populateFromConfig(cfg *bunkerWebConfig) 
 		service = "global"
 	}
 
-	m.ID = types.StringValue(buildConfigID(service, cfg.Type, cfg.Name))
+	// The API normalises `type` (lowercase, hyphens->underscores). `type` is a
+	// Required, RequiresReplace field, so preserve the configured representation
+	// when it normalises to the API's stored value to avoid a spurious replace.
+	cfgType := cfg.Type
+	if !m.Type.IsNull() && !m.Type.IsUnknown() && normalizeConfigType(m.Type.ValueString()) == cfg.Type {
+		cfgType = m.Type.ValueString()
+	}
+
+	m.ID = types.StringValue(buildConfigID(service, cfgType, cfg.Name))
 	m.Service = types.StringValue(service)
-	m.Type = types.StringValue(cfg.Type)
+	m.Type = types.StringValue(cfgType)
 	m.Name = types.StringValue(cfg.Name)
 	m.Data = types.StringValue(cfg.Data)
 	if cfg.Method != "" {
@@ -285,6 +306,20 @@ func (m *BunkerWebConfigResourceModel) populateFromConfig(cfg *bunkerWebConfig) 
 	}
 
 	return nil
+}
+
+// populateFromPlan finalises state after a create/update. The Required scalar
+// fields (type/name/data) are kept exactly as configured to avoid violating
+// Terraform's consistency check (the API normalises type, e.g. hyphen→underscore);
+// only the computed `method` is taken from the read-back config.
+func (m *BunkerWebConfigResourceModel) populateFromPlan(service string, cfg *bunkerWebConfig) {
+	m.ID = types.StringValue(buildConfigID(service, m.Type.ValueString(), m.Name.ValueString()))
+	m.Service = types.StringValue(service)
+	if cfg != nil && cfg.Method != "" {
+		m.Method = types.StringValue(cfg.Method)
+	} else {
+		m.Method = types.StringNull()
+	}
 }
 
 func (m *BunkerWebConfigResourceModel) toConfigKey() (ConfigKey, diag.Diagnostics) {
@@ -326,6 +361,13 @@ func normalizeTFService(v types.String) string {
 
 func buildConfigID(service, cfgType, name string) string {
 	return fmt.Sprintf("%s/%s/%s", service, cfgType, name)
+}
+
+// normalizeConfigType mirrors the BunkerWeb API's config-type normalisation
+// (trim, hyphens->underscores, lowercase) so Read can tell whether a non-canonical
+// configured type is semantically equal to the stored one.
+func normalizeConfigType(t string) string {
+	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(t), "-", "_"))
 }
 
 func stringPointer(value string) *string {

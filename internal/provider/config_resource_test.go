@@ -7,8 +7,39 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
+
+// TestBunkerWebConfigPopulateFromConfigPreservesType locks the Read behaviour for
+// non-canonical config types: "server-http" normalises to the API's "server_http",
+// so it must be preserved (type is RequiresReplace) instead of triggering a replace.
+func TestBunkerWebConfigPopulateFromConfigPreservesType(t *testing.T) {
+	m := &BunkerWebConfigResourceModel{
+		Type: types.StringValue("server-http"),
+		Name: types.StringValue("snippet"),
+	}
+	cfg := &bunkerWebConfig{Service: "global", Type: "server_http", Name: "snippet", Data: "x", Method: "api"}
+
+	if diags := m.populateFromConfig(cfg); diags.HasError() {
+		t.Fatalf("populateFromConfig: %v", diags)
+	}
+	if got := m.Type.ValueString(); got != "server-http" {
+		t.Fatalf("expected configured type preserved, got %q", got)
+	}
+	if got := m.ID.ValueString(); got != "global/server-http/snippet" {
+		t.Fatalf("expected id built from configured type, got %q", got)
+	}
+
+	// A genuinely different type must be adopted from the API.
+	m2 := &BunkerWebConfigResourceModel{Type: types.StringValue("http"), Name: types.StringValue("snippet")}
+	if diags := m2.populateFromConfig(cfg); diags.HasError() {
+		t.Fatalf("populateFromConfig: %v", diags)
+	}
+	if got := m2.Type.ValueString(); got != "server_http" {
+		t.Fatalf("expected API type adopted, got %q", got)
+	}
+}
 
 func TestAccBunkerWebConfigResource(t *testing.T) {
 	fakeAPI := newFakeBunkerWebAPI(t)

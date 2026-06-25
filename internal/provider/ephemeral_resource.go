@@ -104,7 +104,7 @@ func (r *BunkerWebEphemeralResource) Open(ctx context.Context, req ephemeral.Ope
 		return
 	}
 
-	service, err := r.client.GetService(ctx, data.ServiceID.ValueString())
+	got, err := r.client.GetService(ctx, data.ServiceID.ValueString())
 	if err != nil {
 		var apiErr *bunkerWebAPIError
 		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
@@ -116,7 +116,7 @@ func (r *BunkerWebEphemeralResource) Open(ctx context.Context, req ephemeral.Ope
 		return
 	}
 
-	resp.Diagnostics.Append(populateEphemeralFromService(ctx, &data, service)...)
+	resp.Diagnostics.Append(populateEphemeralFromService(ctx, &data, serviceFromConfig(got.Service, got.Config))...)
 	if resp.Diagnostics.HasError() {
 		return
 	}

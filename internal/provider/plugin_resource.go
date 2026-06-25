@@ -119,17 +119,17 @@ func (r *BunkerWebPluginResource) Create(ctx context.Context, req resource.Creat
 		},
 	}
 
-	plugins, err := r.client.UploadPlugins(ctx, uploadReq)
+	created, err := r.client.UploadPlugins(ctx, uploadReq)
 	if err != nil {
 		resp.Diagnostics.AddError("Upload Plugin", err.Error())
 		return
 	}
-	if len(plugins) == 0 {
+	if len(created) == 0 {
 		resp.Diagnostics.AddError("Upload Plugin", "API response did not include uploaded plugin metadata")
 		return
 	}
 
-	plan.ID = types.StringValue(plugins[0].ID)
+	plan.ID = types.StringValue(created[0])
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -53,8 +54,8 @@ func TestBunkerWebClientHealth(t *testing.T) {
 		t.Fatalf("expected payload from Health")
 	}
 
-	if val, ok := payload["status"].(string); !ok || val != "healthy" {
-		t.Fatalf("expected status=healthy in payload: %#v", payload)
+	if val, ok := payload["status"].(string); !ok || val != "ok" {
+		t.Fatalf("expected status=ok in payload: %#v", payload)
 	}
 }
 
@@ -403,26 +404,26 @@ func TestBunkerWebClientUploadConfigs(t *testing.T) {
 		{FileName: "Extra.cfg", Content: []byte("content-2")},
 	}
 
-	configs, err := client.UploadConfigs(ctx, ConfigUploadRequest{Service: "web", Type: "http", Files: files})
+	created, err := client.UploadConfigs(ctx, ConfigUploadRequest{Service: "web", Type: "http", Files: files})
 	if err != nil {
 		t.Fatalf("UploadConfigs: %v", err)
 	}
 
-	if len(configs) != 2 {
-		t.Fatalf("expected two configs returned, got %d", len(configs))
+	if len(created) != 2 {
+		t.Fatalf("expected two created configs, got %d", len(created))
 	}
 
-	for i, cfg := range configs {
-		if cfg.Service != "web" {
-			t.Fatalf("expected config service to be 'web', got %q", cfg.Service)
+	for i, id := range created {
+		parts := strings.Split(id, "/")
+		if len(parts) != 3 {
+			t.Fatalf("expected created id in service/type/name form, got %q", id)
 		}
+		if parts[0] != "web" {
+			t.Fatalf("expected created config service to be 'web', got %q", parts[0])
+		}
+		svc := parts[0]
 		expectedData := "content-" + strconv.Itoa(i+1)
-		if cfg.Data != expectedData {
-			t.Fatalf("expected data %q, got %q", expectedData, cfg.Data)
-		}
-		svc := cfg.Service
-		key := ConfigKey{Service: &svc, Type: cfg.Type, Name: cfg.Name}
-		fetched, err := client.GetConfig(ctx, key, true)
+		fetched, err := client.GetConfig(ctx, ConfigKey{Service: &svc, Type: parts[1], Name: parts[2]}, true)
 		if err != nil {
 			t.Fatalf("GetConfig after upload: %v", err)
 		}
@@ -680,5 +681,89 @@ func TestBunkerWebClientPluginLifecycle(t *testing.T) {
 	}
 	if err := client.DeletePlugin(ctx, " "); err == nil {
 		t.Fatalf("expected validation error for empty plugin id")
+	}
+}
+
+// TestBunkerWebClientServiceDeleteNo405 is a regression test for issue #19: the
+// service identifier must be derived from server_name (not read from the create
+// response, which has none), so DeleteService addresses /services/{id} instead of
+// the collection route the API rejects with a 405 {"detail":"Method Not Allowed"}.
+func TestBunkerWebClientServiceDeleteNo405(t *testing.T) {
+	api := newFakeBunkerWebAPI(t)
+	client, err := newBunkerWebClient(api.URL(), nil, "", "", "")
+	if err != nil {
+		t.Fatalf("newBunkerWebClient: %v", err)
+	}
+
+	ctx := context.Background()
+
+	svc, err := client.CreateService(ctx, ServiceCreateRequest{ServerName: "app.example.com www.example.com"})
+	if err != nil {
+		t.Fatalf("CreateService: %v", err)
+	}
+	if svc.ID != "app.example.com" {
+		t.Fatalf("expected id to be the first server_name token, got %q", svc.ID)
+	}
+
+	if err := client.DeleteService(ctx, svc.ID); err != nil {
+		t.Fatalf("DeleteService with derived id should succeed, got: %v", err)
+	}
+
+	// An empty id collapses to the collection route, reproducing the original bug:
+	// the API answers with a FastAPI 405 {"detail":"Method Not Allowed"} which must
+	// surface as a typed *bunkerWebAPIError carrying the status code and detail.
+	err = client.DeleteService(ctx, "")
+	var apiErr *bunkerWebAPIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *bunkerWebAPIError, got %v", err)
+	}
+	if apiErr.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status 405, got %d", apiErr.StatusCode)
+	}
+	if !strings.Contains(apiErr.Message, "Method Not Allowed") {
+		t.Fatalf("expected the FastAPI detail to be surfaced, got %q", apiErr.Message)
+	}
+}
+
+// TestBunkerWebClientGetServiceConfig validates the GET /services/{id} shape
+// ({"service":"<id>","config":{...}}) and the reconstruction of a service from the
+// flat, unprefixed settings map.
+func TestBunkerWebClientGetServiceConfig(t *testing.T) {
+	api := newFakeBunkerWebAPI(t)
+	client, err := newBunkerWebClient(api.URL(), nil, "", "", "")
+	if err != nil {
+		t.Fatalf("newBunkerWebClient: %v", err)
+	}
+
+	ctx := context.Background()
+
+	if _, err := client.CreateService(ctx, ServiceCreateRequest{
+		ServerName: "app.example.com",
+		IsDraft:    true,
+		Variables:  map[string]string{"USE_GZIP": "yes"},
+	}); err != nil {
+		t.Fatalf("CreateService: %v", err)
+	}
+
+	got, err := client.GetService(ctx, "app.example.com")
+	if err != nil {
+		t.Fatalf("GetService: %v", err)
+	}
+	if got.Service != "app.example.com" {
+		t.Fatalf("expected service id 'app.example.com', got %q", got.Service)
+	}
+	if got.Config["SERVER_NAME"] != "app.example.com" {
+		t.Fatalf("expected SERVER_NAME in config, got %#v", got.Config)
+	}
+	if got.Config["IS_DRAFT"] != "yes" {
+		t.Fatalf("expected IS_DRAFT=yes in config, got %#v", got.Config)
+	}
+	if got.Config["USE_GZIP"] != "yes" {
+		t.Fatalf("expected USE_GZIP variable in config, got %#v", got.Config)
+	}
+
+	svc := serviceFromConfig(got.Service, got.Config)
+	if svc.ServerName != "app.example.com" || !svc.IsDraft || svc.Variables["USE_GZIP"] != "yes" {
+		t.Fatalf("serviceFromConfig reconstruction mismatch: %#v", svc)
 	}
 }

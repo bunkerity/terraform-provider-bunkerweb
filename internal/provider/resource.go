@@ -143,7 +143,7 @@ func (r *BunkerWebResource) Read(ctx context.Context, req resource.ReadRequest, 
 		return
 	}
 
-	service, err := r.client.GetService(ctx, state.ID.ValueString())
+	got, err := r.client.GetService(ctx, state.ID.ValueString())
 	if err != nil {
 		var apiErr *bunkerWebAPIError
 		if errors.As(err, &apiErr) {
@@ -157,10 +157,46 @@ func (r *BunkerWebResource) Read(ctx context.Context, req resource.ReadRequest, 
 		return
 	}
 
-	populateDiags := state.populateFromService(ctx, service)
-	resp.Diagnostics.Append(populateDiags...)
+	state.ID = types.StringValue(got.Service)
+
+	// The API persists only the first token of server_name (unless overridden via
+	// variables), so GET does not round-trip a multi-domain server_name. Preserve
+	// the configured value and only adopt the API's when the identity (the id /
+	// first token) actually changed out-of-band.
+	if firstToken(state.ServerName.ValueString()) != got.Service {
+		if v, ok := lookupServiceSetting(got.Config, got.Service, "SERVER_NAME"); ok && v != "" {
+			state.ServerName = types.StringValue(v)
+		} else {
+			state.ServerName = types.StringValue(got.Service)
+		}
+	}
+	if v, ok := lookupServiceSetting(got.Config, got.Service, "IS_DRAFT"); ok {
+		state.IsDraft = types.BoolValue(isAffirmative(v))
+	}
+
+	// Refresh only the variables already managed in state. GET /services/{id}
+	// returns the full non-default settings set (including inherited multisite
+	// defaults), so a bulk import would produce large spurious drift.
+	prior, diags := mapFromTerraform(ctx, state.Variables)
+	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
+	}
+	if len(prior) > 0 {
+		merged := make(map[string]string, len(prior))
+		for k, v := range prior {
+			if apiV, ok := lookupServiceSetting(got.Config, got.Service, k); ok {
+				merged[k] = apiV
+			} else {
+				merged[k] = v
+			}
+		}
+		vars, mapDiags := mapToTerraform(ctx, merged)
+		resp.Diagnostics.Append(mapDiags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		state.Variables = vars
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)

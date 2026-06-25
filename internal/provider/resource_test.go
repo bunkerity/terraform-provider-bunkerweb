@@ -41,6 +41,46 @@ func TestAccBunkerWebResource(t *testing.T) {
 	})
 }
 
+// TestAccBunkerWebResourceMultiDomain is a regression test ensuring a multi-domain
+// server_name does not drift on refresh. The API persists only the first token of
+// server_name, so Read must preserve the configured value (issue #19 follow-up).
+func TestAccBunkerWebResourceMultiDomain(t *testing.T) {
+	fakeAPI := newFakeBunkerWebAPI(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccBunkerWebResourceMultiDomainConfig(fakeAPI.URL()),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("bunkerweb_service.multi", "server_name", "multi.example.com www.multi.example.com"),
+					resource.TestCheckResourceAttr("bunkerweb_service.multi", "id", "multi.example.com"),
+				),
+			},
+			{
+				// Re-planning the same config must yield no diff: the API only stores
+				// the first token, so a refresh that adopted it would drift forever.
+				Config:   testAccBunkerWebResourceMultiDomainConfig(fakeAPI.URL()),
+				PlanOnly: true,
+			},
+		},
+	})
+}
+
+func testAccBunkerWebResourceMultiDomainConfig(endpoint string) string {
+	return fmt.Sprintf(`
+provider "bunkerweb" {
+  api_endpoint = "%s"
+  api_token    = "test-token"
+}
+
+resource "bunkerweb_service" "multi" {
+  server_name = "multi.example.com www.multi.example.com"
+}
+`, endpoint)
+}
+
 func testAccBunkerWebResourceConfig(endpoint, value string) string {
 	return fmt.Sprintf(`
 provider "bunkerweb" {
