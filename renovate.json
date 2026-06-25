@@ -1,0 +1,38 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "github>bunkerity/renovate-config"
+  ],
+  "enabledManagers": ["gomod", "github-actions", "custom.regex"],
+  "github-actions": {
+    "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"]
+  },
+  "packageRules": [
+    {
+      "description": "Group all terraform-plugin-* Go modules into one PR (framework, go, sdk, testing, docs, mux, ...).",
+      "matchManagers": ["gomod"],
+      "matchPackageNames": ["github.com/hashicorp/terraform-plugin-**"],
+      "groupName": "terraform-plugin"
+    },
+    {
+      "description": "Label the Terraform CLI matrix tracker and give it a clear commit topic.",
+      "matchManagers": ["custom.regex"],
+      "matchPackageNames": ["hashicorp/terraform"],
+      "addLabels": ["terraform"],
+      "commitMessageTopic": "Terraform CLI (CI test matrix)"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Track the latest-stable Terraform CLI leg of the CI test matrix (.github/workflows/test.yml). The 1.8/1.10/1.12 legs are intentional floor/feature-gate boundaries and stay static.",
+      "managerFilePatterns": ["/^\\.github/workflows/test\\.yml$/"],
+      "matchStrings": [
+        "# renovate-track:\\s*(?<depName>\\S+)\\s+- ['\"](?<currentValue>\\d+\\.\\d+\\.\\d+)['\"]"
+      ],
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver",
+      "extractVersionTemplate": "^v(?<version>.+)$"
+    }
+  ]
+}
