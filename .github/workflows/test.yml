@@ -15,6 +15,12 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded in-progress runs for the same ref on pull requests; never cancel
+# pushes (so every commit to a branch is fully tested).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # Ensure project builds before running testing matrix
   build:
@@ -32,10 +38,11 @@ jobs:
       - name: Run linters
         uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
         with:
-          version: latest
+          version: v2.12.2
 
   generate:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
@@ -63,11 +70,11 @@ jobs:
       matrix:
         # list whatever Terraform versions here you would like to support
         terraform:
-          - '1.0.*'
-          - '1.1.*'
-          - '1.2.*'
-          - '1.3.*'
-          - '1.4.*'
+          - '1.8.*'    # provider minimum (README); exercises provider functions
+          - '1.10.*'   # ephemeral resources GA gate
+          - '1.12.*'
+          # renovate-track: hashicorp/terraform
+          - '1.15.7'   # latest stable Terraform CLI; custom manager keeps this current (floor/gate legs above stay static)
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
