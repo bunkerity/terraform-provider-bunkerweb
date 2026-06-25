@@ -1,3 +1,6 @@
+# Copyright Bunkerity 2025, 2026
+# SPDX-License-Identifier: MPL-2.0
+
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 language: "en-GB"
 tone_instructions: "Be direct, technical, and actionable. Cite exact lines. Prefer concrete guidance over vague suggestions. Use British English."

@@ -1,4 +1,5 @@
 // Copyright (c) HashiCorp, Inc.
+// Copyright Bunkerity 2025, 2026
 // SPDX-License-Identifier: MPL-2.0
 
 package main
